@@ -1,0 +1,19 @@
+[near]
+rpc_url = "https://rpc.testnet.near.org"
+relayer = "near:omni-relayer-testnet.testnet"
+
+[eth]
+rpc_url = "https://sepolia.infura.io/v3/INFURA_API_KEY"
+relayer = "eth:0xae6118F695E078DA03d7c59aD84a6a810D37b707"
+
+[base]
+rpc_url = "https://base-sepolia.infura.io/v3/INFURA_API_KEY"
+relayer = "base:0xae6118F695E078DA03d7c59aD84a6a810D37b707"
+
+[arb]
+rpc_url = "https://arbitrum-sepolia.infura.io/v3/INFURA_API_KEY"
+relayer = "arb:0xae6118F695E078DA03d7c59aD84a6a810D37b707"
+
+[solana]
+rpc_url = "https://api.devnet.solana.com"
+relayer = "sol:DuSs7rCr7oTLHjM29QQ8NwDViaahTU58qqxaJVyAkgbn"
