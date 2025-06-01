@@ -14,9 +14,6 @@ use solana_sdk::pubkey::Pubkey;
 pub enum ClientError {
     #[error("Solana RPC error: {0}")]
     RpcError(#[from] solana_rpc_client_api::client_error::Error),
-
-    #[error("Unsupported relayer address for EVM: {0}")]
-    UnsupportedRelayerType(OmniAddress),
 }
 
 #[derive(Builder, Clone)]

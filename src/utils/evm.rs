@@ -12,9 +12,6 @@ use alloy::{
 pub enum ClientError {
     #[error("EVM client error: {0}")]
     TransportError(#[from] alloy::transports::TransportError),
-
-    #[error("Unsupported relayer address for EVM: {0}")]
-    UnsupportedRelayerType(OmniAddress),
 }
 
 #[derive(Clone, Debug)]
