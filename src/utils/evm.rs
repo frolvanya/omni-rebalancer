@@ -8,8 +8,6 @@ use alloy::{
     providers::{DynProvider, Provider, ProviderBuilder},
 };
 
-use crate::utils::WATCHER_INTERVAL;
-
 #[derive(Debug, Error)]
 pub enum ClientError {
     #[error("EVM client error: {0}")]
@@ -43,29 +41,5 @@ impl Client {
             .get_balance(address)
             .await
             .map_err(ClientError::TransportError)
-    }
-
-    pub async fn balance_watcher(&self) -> Result<(), ClientError> {
-        let (OmniAddress::Eth(address) | OmniAddress::Base(address) | OmniAddress::Arb(address)) =
-            &self.relayer
-        else {
-            return Err(ClientError::UnsupportedRelayerType(self.relayer.clone()));
-        };
-        let address = address.0.into();
-
-        loop {
-            let balance = self.get_native_balance(address).await?;
-
-            if balance < self.threshold {
-                tracing::warn!(
-                    "Balance for address {} is below threshold: {} < {}",
-                    self.relayer,
-                    balance,
-                    self.threshold
-                );
-            }
-
-            tokio::time::sleep(tokio::time::Duration::from_secs(WATCHER_INTERVAL)).await;
-        }
     }
 }

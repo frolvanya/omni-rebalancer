@@ -27,5 +27,5 @@ near_token = "arb.omdep.near"
 rpc_url = "https://api.mainnet-beta.solana.com"
 relayer = "sol:DuSs7rCr7oTLHjM29QQ8NwDViaahTU58qqxaJVyAkgbn"
 # 2 SOL
-threshold = 2000000000
+threshold = "2000000000"
 near_token = "sol.omdep.near"

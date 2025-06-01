@@ -1,4 +1,5 @@
-use solana_sdk::pubkey::Pubkey;
+use std::sync::Arc;
+
 use thiserror::Error;
 
 use alloy::primitives::U256;
@@ -13,6 +14,22 @@ pub mod near;
 pub mod solana;
 
 const WATCHER_INTERVAL: u64 = 60;
+
+macro_rules! spawn_watcher {
+    ($handles:ident, $self:ident, $client_opt:expr) => {
+        if let Some(client) = &$client_opt {
+            let relayer = client.relayer.clone();
+            let threshold = client.threshold;
+            let cloned_self = Arc::clone(&$self);
+
+            $handles.push(tokio::spawn(async move {
+                cloned_self
+                    .start_relayer_balance_watcher(relayer, threshold)
+                    .await
+            }));
+        }
+    };
+}
 
 #[derive(Debug, Error)]
 pub enum ClientError {
@@ -65,14 +82,17 @@ impl Client {
             .build()
     }
 
-    pub async fn get_native_balance(&self, omni_address: OmniAddress) -> Result<U256, ClientError> {
-        match &omni_address {
+    pub async fn get_native_balance(
+        &self,
+        omni_address: &OmniAddress,
+    ) -> Result<U256, ClientError> {
+        match omni_address {
             OmniAddress::Near(account_id) => self
                 .near_client()?
                 .get_native_balance(account_id)
                 .await
-                .map_err(ClientError::NearError)
-                .map(U256::from),
+                .map(U256::from)
+                .map_err(ClientError::NearError),
             OmniAddress::Eth(address) | OmniAddress::Base(address) | OmniAddress::Arb(address) => {
                 self.evm_client(omni_address.get_chain())?
                     .get_native_balance(address.0.into())
@@ -81,62 +101,45 @@ impl Client {
             }
             OmniAddress::Sol(address) => self
                 .solana_client()?
-                .get_native_balance(Pubkey::from(address.0))
+                .get_native_balance(address.0.into())
                 .await
-                .map_err(ClientError::SolanaError)
-                .map(U256::from),
+                .map(U256::from)
+                .map_err(ClientError::SolanaError),
         }
     }
 
-    pub async fn balance_watcher(&self) -> Vec<JoinHandle<Result<(), ClientError>>> {
+    pub async fn start_relayer_balance_watcher(
+        &self,
+        relayer: OmniAddress,
+        threshold: U256,
+    ) -> Result<(), ClientError> {
+        tracing::info!("Starting relayer balance watcher for {}", relayer);
+
+        loop {
+            let balance = self.get_native_balance(&relayer).await?;
+
+            if balance < threshold {
+                tracing::warn!(
+                    "Balance for address {} is below threshold: {} < {}",
+                    relayer,
+                    balance,
+                    threshold
+                );
+            }
+
+            tokio::time::sleep(tokio::time::Duration::from_secs(WATCHER_INTERVAL)).await;
+        }
+    }
+
+    pub async fn start_all_relayer_balance_watchers(
+        self: Arc<Self>,
+    ) -> Vec<JoinHandle<Result<(), ClientError>>> {
         let mut handles = Vec::new();
 
-        if let Some(eth_client) = self.eth_client.clone() {
-            tracing::info!("Starting Eth balance watcher for {}", eth_client.relayer);
-
-            handles.push(tokio::spawn(async move {
-                eth_client
-                    .balance_watcher()
-                    .await
-                    .map_err(ClientError::EvmError)
-            }));
-        }
-
-        if let Some(base_client) = self.base_client.clone() {
-            tracing::info!("Starting Base balance watcher for {}", base_client.relayer);
-
-            handles.push(tokio::spawn(async move {
-                base_client
-                    .balance_watcher()
-                    .await
-                    .map_err(ClientError::EvmError)
-            }));
-        }
-
-        if let Some(arb_client) = self.arb_client.clone() {
-            tracing::info!("Starting Arb balance watcher for {}", arb_client.relayer);
-
-            handles.push(tokio::spawn(async move {
-                arb_client
-                    .balance_watcher()
-                    .await
-                    .map_err(ClientError::EvmError)
-            }));
-        }
-
-        if let Some(solana_client) = self.solana_client.clone() {
-            tracing::info!(
-                "Starting Solana balance watcher for {}",
-                solana_client.relayer
-            );
-
-            handles.push(tokio::spawn(async move {
-                solana_client
-                    .balance_watcher()
-                    .await
-                    .map_err(ClientError::SolanaError)
-            }));
-        }
+        spawn_watcher!(handles, self, self.eth_client);
+        spawn_watcher!(handles, self, self.base_client);
+        spawn_watcher!(handles, self, self.arb_client);
+        spawn_watcher!(handles, self, self.solana_client);
 
         handles
     }

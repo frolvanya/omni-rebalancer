@@ -29,5 +29,5 @@ near_token = "eth.sepolia.testnet"
 rpc_url = "https://api.devnet.solana.com"
 relayer = "sol:BXss9YNCX2p6VPf2Em54pHXkXnC2FPBeZgbB9fY1cuBR"
 # 2 SOL
-threshold = 2000000000
+threshold = "2000000000"
 near_token = "sol.omnidep.testnet"

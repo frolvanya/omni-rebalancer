@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use anyhow::{Context, Result};
 use clap::Parser;
 
@@ -29,11 +31,11 @@ async fn main() -> Result<()> {
     )
     .context("Failed to parse config file")?;
 
-    let client = utils::Client::build(config.clone())?;
+    let client = Arc::new(utils::Client::build(config.clone())?);
 
     let mut handles = Vec::new();
 
-    handles.extend(client.balance_watcher().await);
+    handles.extend(client.start_all_relayer_balance_watchers().await);
 
     tokio::select! {
         _ = tokio::signal::ctrl_c() => {

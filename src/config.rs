@@ -46,6 +46,6 @@ pub struct Evm {
 pub struct Solana {
     pub rpc_url: Url,
     pub relayer: OmniAddress,
-    pub threshold: u64,
+    pub threshold: U256,
     pub near_token: AccountId,
 }
