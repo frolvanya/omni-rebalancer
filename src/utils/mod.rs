@@ -5,7 +5,10 @@ use thiserror::Error;
 use alloy::primitives::U256;
 use derive_builder::{Builder, UninitializedFieldError};
 use omni_types::{ChainKind, OmniAddress};
-use tokio::task::JoinHandle;
+use tokio::{
+    sync::mpsc::{Receiver, Sender},
+    task::JoinHandle,
+};
 
 use crate::config::{self, Config};
 
@@ -20,7 +23,7 @@ macro_rules! spawn_watcher {
         if let Some(client) = &$client_opt {
             let relayer = client.relayer.clone();
             let threshold = client.threshold;
-            let cloned_self = Arc::clone(&$self);
+            let cloned_self = $self.clone();
 
             $handles.push(tokio::spawn(async move {
                 cloned_self
@@ -57,6 +60,8 @@ pub struct Client {
     pub base_client: Option<evm::Client>,
     pub arb_client: Option<evm::Client>,
     pub solana_client: Option<solana::Client>,
+
+    pub rebalancer_tx: Option<Sender<OmniAddress>>,
 }
 
 fn build_evm_client(opt: Option<config::Evm>) -> Result<Option<evm::Client>, ClientError> {
@@ -72,13 +77,14 @@ fn build_solana_client(opt: Option<config::Solana>) -> Result<Option<solana::Cli
 }
 
 impl Client {
-    pub fn build(config: Config) -> Result<Self, ClientError> {
+    pub fn build(config: Config, tx: Sender<OmniAddress>) -> Result<Self, ClientError> {
         ClientBuilder::default()
             .near_client(Some(near::Client::new(config.near.rpc_url)))
             .eth_client(build_evm_client(config.eth)?)
             .base_client(build_evm_client(config.base)?)
             .arb_client(build_evm_client(config.arb)?)
             .solana_client(build_solana_client(config.solana)?)
+            .rebalancer_tx(Some(tx))
             .build()
     }
 
@@ -119,12 +125,9 @@ impl Client {
             let balance = self.get_native_balance(&relayer).await?;
 
             if balance < threshold {
-                tracing::warn!(
-                    "Balance for address {} is below threshold: {} < {}",
-                    relayer,
-                    balance,
-                    threshold
-                );
+                if let Err(err) = self.rebalancer_tx()?.try_send(relayer.clone()) {
+                    tracing::warn!("Failed to send rebalance request for {}: {}", relayer, err);
+                }
             }
 
             tokio::time::sleep(tokio::time::Duration::from_secs(WATCHER_INTERVAL)).await;
@@ -142,6 +145,21 @@ impl Client {
         spawn_watcher!(handles, self, self.solana_client);
 
         handles
+    }
+
+    pub async fn start_rebalancer(
+        &self,
+        mut rebalancer_rx: Receiver<OmniAddress>,
+    ) -> JoinHandle<Result<(), ClientError>> {
+        tracing::info!("Starting rebalancer");
+
+        tokio::spawn(async move {
+            while let Some(address) = rebalancer_rx.recv().await {
+                tracing::info!("Triggering rebalancing for {}", address);
+            }
+
+            Ok(())
+        })
     }
 
     pub fn near_client(&self) -> Result<&near::Client, ClientError> {
@@ -168,6 +186,12 @@ impl Client {
         self.solana_client
             .as_ref()
             .ok_or_else(|| ClientError::ConfigError("Solana client is not initialized".to_string()))
+    }
+
+    pub fn rebalancer_tx(&self) -> Result<&Sender<OmniAddress>, ClientError> {
+        self.rebalancer_tx.as_ref().ok_or_else(|| {
+            ClientError::ConfigError("Rebalance channel is not initialized".to_string())
+        })
     }
 }
 

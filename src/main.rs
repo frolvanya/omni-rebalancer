@@ -31,11 +31,13 @@ async fn main() -> Result<()> {
     )
     .context("Failed to parse config file")?;
 
-    let client = Arc::new(utils::Client::build(config.clone())?);
+    let (tx, rx) = tokio::sync::mpsc::channel(64);
+    let client = Arc::new(utils::Client::build(config.clone(), tx)?);
 
     let mut handles = Vec::new();
 
-    handles.extend(client.start_all_relayer_balance_watchers().await);
+    handles.extend(client.clone().start_all_relayer_balance_watchers().await);
+    handles.push(client.start_rebalancer(rx).await);
 
     tokio::select! {
         _ = tokio::signal::ctrl_c() => {
