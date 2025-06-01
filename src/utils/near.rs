@@ -53,7 +53,6 @@ impl Client {
         }
     }
 
-    #[tracing::instrument(name = "near_get_native_balance", skip(self))]
     pub async fn get_native_balance(&self, account_id: &AccountId) -> Result<u128, ClientError> {
         self.view_account(account_id)
             .await

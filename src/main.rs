@@ -29,7 +29,23 @@ async fn main() -> Result<()> {
     )
     .context("Failed to parse config file")?;
 
-    let client = utils::Client::build(config)?;
+    let client = utils::Client::build(config.clone())?;
+
+    let mut handles = Vec::new();
+
+    handles.extend(client.balance_watcher().await);
+
+    tokio::select! {
+        _ = tokio::signal::ctrl_c() => {
+            tracing::info!("Received Ctrl+C signal, shutting down.");
+        }
+        result = futures::future::select_all(handles) => {
+            let (res, _, _) = result;
+            if let Ok(Err(err)) = res {
+                tracing::error!("A worker encountered an error: {err:?}");
+            }
+        }
+    }
 
     Ok(())
 }

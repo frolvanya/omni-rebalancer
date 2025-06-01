@@ -4119,6 +4119,7 @@ dependencies = [
  "clap",
  "derive_builder",
  "dotenv",
+ "futures",
  "near-crypto",
  "near-jsonrpc-client",
  "near-jsonrpc-primitives",

@@ -4,12 +4,15 @@ use thiserror::Error;
 use alloy::primitives::U256;
 use derive_builder::{Builder, UninitializedFieldError};
 use omni_types::{ChainKind, OmniAddress};
+use tokio::task::JoinHandle;
 
-use crate::config::Config;
+use crate::config::{self, Config};
 
 pub mod evm;
 pub mod near;
 pub mod solana;
+
+const WATCHER_INTERVAL: u64 = 60;
 
 #[derive(Debug, Error)]
 pub enum ClientError {
@@ -39,26 +42,29 @@ pub struct Client {
     pub solana_client: Option<solana::Client>,
 }
 
+fn build_evm_client(opt: Option<config::Evm>) -> Result<Option<evm::Client>, ClientError> {
+    opt.map(|cfg| evm::Client::new(cfg.rpc_url, cfg.relayer, cfg.threshold))
+        .transpose()
+        .map_err(ClientError::EvmError)
+}
+
+fn build_solana_client(opt: Option<config::Solana>) -> Result<Option<solana::Client>, ClientError> {
+    opt.map(|cfg| solana::Client::new(cfg.rpc_url, cfg.relayer, cfg.threshold))
+        .transpose()
+        .map_err(ClientError::SolanaError)
+}
+
 impl Client {
     pub fn build(config: Config) -> Result<Self, ClientError> {
-        let near_client = near::Client::new(config.near.rpc_url);
-        let eth_client = config.eth.map(|eth| evm::Client::new(eth.rpc_url));
-        let base_client = config.base.map(|base| evm::Client::new(base.rpc_url));
-        let arb_client = config.arb.map(|arb| evm::Client::new(arb.rpc_url));
-        let solana_client = config
-            .solana
-            .map(|solana| solana::Client::new(solana.rpc_url));
-
         ClientBuilder::default()
-            .near_client(Some(near_client))
-            .eth_client(eth_client)
-            .base_client(base_client)
-            .arb_client(arb_client)
-            .solana_client(solana_client)
+            .near_client(Some(near::Client::new(config.near.rpc_url)))
+            .eth_client(build_evm_client(config.eth)?)
+            .base_client(build_evm_client(config.base)?)
+            .arb_client(build_evm_client(config.arb)?)
+            .solana_client(build_solana_client(config.solana)?)
             .build()
     }
 
-    #[tracing::instrument(name = "get_native_balance", skip(self))]
     pub async fn get_native_balance(&self, omni_address: OmniAddress) -> Result<U256, ClientError> {
         match &omni_address {
             OmniAddress::Near(account_id) => self
@@ -80,6 +86,59 @@ impl Client {
                 .map_err(ClientError::SolanaError)
                 .map(U256::from),
         }
+    }
+
+    pub async fn balance_watcher(&self) -> Vec<JoinHandle<Result<(), ClientError>>> {
+        let mut handles = Vec::new();
+
+        if let Some(eth_client) = self.eth_client.clone() {
+            tracing::info!("Starting Eth balance watcher for {}", eth_client.relayer);
+
+            handles.push(tokio::spawn(async move {
+                eth_client
+                    .balance_watcher()
+                    .await
+                    .map_err(ClientError::EvmError)
+            }));
+        }
+
+        if let Some(base_client) = self.base_client.clone() {
+            tracing::info!("Starting Base balance watcher for {}", base_client.relayer);
+
+            handles.push(tokio::spawn(async move {
+                base_client
+                    .balance_watcher()
+                    .await
+                    .map_err(ClientError::EvmError)
+            }));
+        }
+
+        if let Some(arb_client) = self.arb_client.clone() {
+            tracing::info!("Starting Arb balance watcher for {}", arb_client.relayer);
+
+            handles.push(tokio::spawn(async move {
+                arb_client
+                    .balance_watcher()
+                    .await
+                    .map_err(ClientError::EvmError)
+            }));
+        }
+
+        if let Some(solana_client) = self.solana_client.clone() {
+            tracing::info!(
+                "Starting Solana balance watcher for {}",
+                solana_client.relayer
+            );
+
+            handles.push(tokio::spawn(async move {
+                solana_client
+                    .balance_watcher()
+                    .await
+                    .map_err(ClientError::SolanaError)
+            }));
+        }
+
+        handles
     }
 
     pub fn near_client(&self) -> Result<&near::Client, ClientError> {

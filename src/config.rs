@@ -1,3 +1,5 @@
+use alloy::primitives::U256;
+use near_sdk::AccountId;
 use serde::Deserialize;
 use url::Url;
 
@@ -16,7 +18,7 @@ where
         .map_err(serde::de::Error::custom)
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Clone, Deserialize)]
 pub struct Config {
     pub near: Near,
     pub eth: Option<Evm>,
@@ -36,10 +38,14 @@ pub struct Evm {
     #[serde(deserialize_with = "replace_rpc_api_key")]
     pub rpc_url: Url,
     pub relayer: OmniAddress,
+    pub threshold: U256,
+    pub near_token: AccountId,
 }
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct Solana {
     pub rpc_url: Url,
     pub relayer: OmniAddress,
+    pub threshold: u64,
+    pub near_token: AccountId,
 }

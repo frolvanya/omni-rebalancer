@@ -5,15 +5,27 @@ relayer = "near:omni-relayer.bridge.near"
 [eth]
 rpc_url = "https://mainnet.infura.io/v3/INFURA_API_KEY"
 relayer = "eth:0xae6118F695E078DA03d7c59aD84a6a810D37b707"
+# 5 ETH
+threshold = "5000000000000000000"
+near_token = "eth.bridge.near"
 
 [base]
 rpc_url = "https://base-mainnet.infura.io/v3/INFURA_API_KEY"
 relayer = "base:0xae6118F695E078DA03d7c59aD84a6a810D37b707"
+# 0.2 ETH
+threshold = "200000000000000000"
+near_token = "base.omdep.near"
 
 [arb]
 rpc_url = "https://arbitrum-mainnet.infura.io/v3/INFURA_API_KEY"
 relayer = "arb:0xae6118F695E078DA03d7c59aD84a6a810D37b707"
+# 0.2 ETH
+threshold = "200000000000000000"
+near_token = "arb.omdep.near"
 
 [solana]
 rpc_url = "https://api.mainnet-beta.solana.com"
 relayer = "sol:DuSs7rCr7oTLHjM29QQ8NwDViaahTU58qqxaJVyAkgbn"
+# 2 SOL
+threshold = 2000000000
+near_token = "sol.omdep.near"
