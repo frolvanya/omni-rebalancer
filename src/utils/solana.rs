@@ -1,14 +1,12 @@
 use std::sync::Arc;
 
+use alloy::primitives::U256;
 use derive_builder::Builder;
 use omni_types::OmniAddress;
-use thiserror::Error;
-
-use url::Url;
-
-use alloy::primitives::U256;
 use solana_client::nonblocking::rpc_client::RpcClient;
 use solana_sdk::pubkey::Pubkey;
+use thiserror::Error;
+use url::Url;
 
 #[derive(Debug, Error)]
 pub enum ClientError {

@@ -1,12 +1,10 @@
-use omni_types::OmniAddress;
-use thiserror::Error;
-
-use url::Url;
-
 use alloy::{
     primitives::U256,
     providers::{DynProvider, Provider, ProviderBuilder},
 };
+use omni_types::OmniAddress;
+use thiserror::Error;
+use url::Url;
 
 #[derive(Debug, Error)]
 pub enum ClientError {

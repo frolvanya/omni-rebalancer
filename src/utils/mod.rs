@@ -1,13 +1,13 @@
 use std::sync::Arc;
 
+use alloy::primitives::U256;
 use bridge_connector_common::result::BridgeSdkError;
+use derive_builder::{Builder, UninitializedFieldError};
 use near_bridge_client::NearBridgeClient;
 use near_sdk::AccountId;
-use thiserror::Error;
-
-use alloy::primitives::U256;
-use derive_builder::{Builder, UninitializedFieldError};
 use omni_types::{ChainKind, OmniAddress};
+use rust_decimal::{Decimal, prelude::FromPrimitive};
+use thiserror::Error;
 use tokio::{
     sync::mpsc::{Receiver, Sender},
     task::JoinHandle,
@@ -74,6 +74,9 @@ pub enum ClientError {
 
     #[error("Fee error: {0}")]
     FeeError(#[from] FeeError),
+
+    #[error("Parse error: {0}")]
+    ParseError(String),
 
     #[error("Uninitialized field: {0}")]
     UninitializedFieldError(#[from] UninitializedFieldError),
@@ -177,9 +180,17 @@ impl Client {
             .await
             .map_err(ClientError::NearBridgeClientError)?;
 
-        let balance = near_client
-            .ft_balance_of(&native_token, &near_client.relayer)
-            .await? as f64;
+        let balance = Decimal::from_u128(
+            near_client
+                .ft_balance_of(&native_token, &near_client.relayer)
+                .await?,
+        )
+        .ok_or_else(|| {
+            ClientError::ParseError(format!(
+                "Failed to get balance for {} on {}",
+                near_client.relayer, native_token
+            ))
+        })?;
 
         tracing::info!(
             "Sending {balance} of {native_token} from {} to {receiver}",
@@ -194,21 +205,35 @@ impl Client {
             )
             .await?;
 
+        let Some(usd_fee) = Decimal::from_f64(fee.usd_fee) else {
+            return Err(ClientError::ParseError(format!(
+                "USD fee {} is not a valid decimal",
+                fee.usd_fee
+            )));
+        };
+
         let Some(transferred_token_fee) = fee.transferred_token_fee else {
             return Err(ClientError::FeeError(
                 FeeError::TransferredTokenFeeIsProhibited(native_token),
             ));
         };
 
-        if Some(fee.usd_fee) > near_client.max_fee_usd {
+        if Some(usd_fee) > near_client.max_fee_usd {
             return Err(ClientError::FeeError(FeeError::HighFeeError(format!(
                 "Transfer fee {} exceeds max fee {:?}",
                 fee.usd_fee, near_client.max_fee_usd
             ))));
         }
 
-        let price_per_unit = fee.usd_fee / transferred_token_fee.0 as f64;
-        let balance_usd = balance as f64 * price_per_unit;
+        let Some(transferred_token_fee) = Decimal::from_u128(transferred_token_fee.0) else {
+            return Err(ClientError::ParseError(format!(
+                "Transferred token fee for {} is not a valid u128",
+                native_token
+            )));
+        };
+
+        let price_per_unit = usd_fee / transferred_token_fee;
+        let balance_usd = balance * price_per_unit;
 
         if Some(balance_usd) < near_client.min_rebalance_usd {
             tracing::info!(

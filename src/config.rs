@@ -1,10 +1,10 @@
 use alloy::primitives::U256;
 use near_bridge_client::NearBridgeClient;
 use near_sdk::AccountId;
+use omni_types::{ChainKind, OmniAddress};
+use rust_decimal::Decimal;
 use serde::Deserialize;
 use url::Url;
-
-use omni_types::{ChainKind, OmniAddress};
 
 use crate::utils::{ClientError, evm, near, omni_endpoint, solana};
 
@@ -36,8 +36,8 @@ pub struct Near {
     pub rpc_url: Url,
     pub relayer: AccountId,
     pub omni_bridge_id: AccountId,
-    pub max_fee_usd: Option<f64>,
-    pub min_rebalance_usd: Option<f64>,
+    pub max_fee_usd: Option<Decimal>,
+    pub min_rebalance_usd: Option<Decimal>,
 }
 
 #[derive(Debug, Clone, Deserialize)]

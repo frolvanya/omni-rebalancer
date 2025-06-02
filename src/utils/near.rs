@@ -1,9 +1,4 @@
 use anyhow::Result;
-use serde_json::json;
-use thiserror::Error;
-
-use url::Url;
-
 use near_jsonrpc_client::{
     JsonRpcClient,
     errors::JsonRpcError,
@@ -15,6 +10,10 @@ use near_primitives::{
     views::{AccountView, QueryRequest},
 };
 use near_sdk::AccountId;
+use rust_decimal::Decimal;
+use serde_json::json;
+use thiserror::Error;
+use url::Url;
 
 #[derive(Clone)]
 pub struct ViewRequest {
@@ -39,16 +38,16 @@ pub enum ClientError {
 pub struct Client {
     pub client: JsonRpcClient,
     pub relayer: AccountId,
-    pub max_fee_usd: Option<f64>,
-    pub min_rebalance_usd: Option<f64>,
+    pub max_fee_usd: Option<Decimal>,
+    pub min_rebalance_usd: Option<Decimal>,
 }
 
 impl Client {
     pub fn new(
         url: Url,
         relayer: AccountId,
-        max_fee_usd: Option<f64>,
-        min_rebalance_amount: Option<f64>,
+        max_fee_usd: Option<Decimal>,
+        min_rebalance_amount: Option<Decimal>,
     ) -> Self {
         Self {
             client: JsonRpcClient::connect(url),
