@@ -3,7 +3,8 @@ use std::sync::Arc;
 use alloy::primitives::U256;
 use bridge_connector_common::result::BridgeSdkError;
 use derive_builder::{Builder, UninitializedFieldError};
-use near_bridge_client::NearBridgeClient;
+use near_bridge_client::{NearBridgeClient, TransactionOptions};
+use near_primitives::views::TxExecutionStatus;
 use near_sdk::AccountId;
 use omni_types::{ChainKind, OmniAddress};
 use rust_decimal::{Decimal, prelude::FromPrimitive};
@@ -41,6 +42,9 @@ macro_rules! spawn_watcher {
 #[allow(clippy::enum_variant_names)]
 #[derive(Debug, Error)]
 pub enum FeeError {
+    #[error("Native token fee is prohibited: {0}")]
+    NativeTokenFeeIsProhibited(AccountId),
+
     #[error("Transferred token fee is prohibited: {0}")]
     TransferredTokenFeeIsProhibited(AccountId),
 
@@ -171,6 +175,8 @@ impl Client {
     }
 
     pub async fn rebalance(&self, receiver: OmniAddress) -> Result<(), ClientError> {
+        tracing::info!("Trying to rebalance to {}", receiver);
+
         let near_bridge_client = self.near_bridge_client()?;
         let near_client = self.near_client()?;
         let omni_endpoint_client = self.omni_endpoint_client()?;
@@ -180,11 +186,10 @@ impl Client {
             .await
             .map_err(ClientError::NearBridgeClientError)?;
 
-        let balance = self.get_relayer_balance_decimal(&native_token).await?;
-
         tracing::info!(
-            "Sending {balance} of {native_token} from {} to {receiver}",
-            near_client.relayer
+            "Native token for {:?} is {}",
+            receiver.get_chain(),
+            native_token
         );
 
         let fee = omni_endpoint_client
@@ -194,6 +199,12 @@ impl Client {
                 &OmniAddress::Near(native_token.clone()),
             )
             .await?;
+
+        let Some(native_token_fee) = fee.native_token_fee else {
+            return Err(ClientError::FeeError(FeeError::NativeTokenFeeIsProhibited(
+                native_token,
+            )));
+        };
 
         let Some(transferred_token_fee) = fee.transferred_token_fee else {
             return Err(ClientError::FeeError(
@@ -210,8 +221,11 @@ impl Client {
             ))));
         }
 
-        let balance_usd =
-            Self::get_transferred_token_price_per_unit(usd_fee, transferred_token_fee.0)? * balance;
+        let balance = self.get_relayer_balance(&native_token).await?;
+        let balance_decimal = Self::u128_to_decimal(balance, "relayer balance")?;
+        let price_per_unit =
+            Self::get_transferred_token_price_per_unit(usd_fee, transferred_token_fee.0)?;
+        let balance_usd = balance_decimal * price_per_unit;
 
         if Some(balance_usd) < near_client.min_rebalance_usd {
             tracing::info!(
@@ -221,6 +235,28 @@ impl Client {
             );
             return Ok(());
         }
+
+        tracing::info!(
+            "Sending {balance} of {native_token} from {} to {receiver}",
+            near_client.relayer
+        );
+
+        let hash = near_bridge_client
+            .init_transfer(
+                native_token.to_string(),
+                balance,
+                receiver,
+                0,
+                native_token_fee.0,
+                TransactionOptions {
+                    nonce: None,
+                    wait_until: TxExecutionStatus::Included,
+                    wait_final_outcome_timeout_sec: None,
+                },
+            )
+            .await?;
+
+        tracing::info!("Transfer initiated with hash: {}", hash);
 
         Ok(())
     }
@@ -304,12 +340,12 @@ impl Client {
         })
     }
 
-    async fn get_relayer_balance_decimal(&self, token: &AccountId) -> Result<Decimal, ClientError> {
+    async fn get_relayer_balance(&self, token: &AccountId) -> Result<u128, ClientError> {
         let near_client = self.near_client()?;
-        let raw_balance = near_client
+        near_client
             .ft_balance_of(token, &near_client.relayer)
-            .await?;
-        Self::u128_to_decimal(raw_balance, "relayer balance")
+            .await
+            .map_err(ClientError::NearError)
     }
 
     fn get_transferred_token_price_per_unit(
