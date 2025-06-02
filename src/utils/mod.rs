@@ -60,6 +60,9 @@ pub enum ClientError {
 
     #[error("Unsupported chain: {0}")]
     UnsupportedChain(String),
+
+    #[error("High fee error: {0}")]
+    HighFeeError(String),
 }
 
 #[derive(Builder, Default)]
@@ -176,6 +179,13 @@ impl Client {
                 &OmniAddress::Near(native_token),
             )
             .await?;
+
+        if Some(fee.usd_fee) > near_client.max_fee_usd {
+            return Err(ClientError::HighFeeError(format!(
+                "Transfer fee {} exceeds max fee {:?}",
+                fee.usd_fee, near_client.max_fee_usd
+            )));
+        }
 
         tracing::info!("Transfer fee: {fee:?}");
 

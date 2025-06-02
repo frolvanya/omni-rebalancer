@@ -2,6 +2,7 @@
 rpc_url = "https://rpc.testnet.near.org"
 relayer = "omni-relayer-testnet.testnet"
 omni_bridge_id = "omni.n-bridge.testnet"
+max_fee_usd = 0.50
 
 [eth]
 rpc_url = "https://sepolia.infura.io/v3/INFURA_API_KEY"

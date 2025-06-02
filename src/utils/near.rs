@@ -39,13 +39,15 @@ pub enum ClientError {
 pub struct Client {
     pub client: JsonRpcClient,
     pub relayer: AccountId,
+    pub max_fee_usd: Option<f64>,
 }
 
 impl Client {
-    pub fn new(url: Url, relayer: AccountId) -> Self {
+    pub fn new(url: Url, relayer: AccountId, max_fee_usd: Option<f64>) -> Self {
         Self {
             client: JsonRpcClient::connect(url),
             relayer,
+            max_fee_usd,
         }
     }
 

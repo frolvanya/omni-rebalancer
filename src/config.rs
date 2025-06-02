@@ -36,6 +36,7 @@ pub struct Near {
     pub rpc_url: Url,
     pub relayer: AccountId,
     pub omni_bridge_id: AccountId,
+    pub max_fee_usd: Option<f64>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -75,7 +76,11 @@ impl Config {
     }
 
     pub fn build_near_client(&self) -> near::Client {
-        near::Client::new(self.near.rpc_url.clone(), self.near.relayer.clone())
+        near::Client::new(
+            self.near.rpc_url.clone(),
+            self.near.relayer.clone(),
+            self.near.max_fee_usd,
+        )
     }
 
     pub fn build_evm_client(&self, chain: ChainKind) -> Result<Option<evm::Client>, ClientError> {
