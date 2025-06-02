@@ -180,17 +180,7 @@ impl Client {
             .await
             .map_err(ClientError::NearBridgeClientError)?;
 
-        let balance = Decimal::from_u128(
-            near_client
-                .ft_balance_of(&native_token, &near_client.relayer)
-                .await?,
-        )
-        .ok_or_else(|| {
-            ClientError::ParseError(format!(
-                "Failed to get balance for {} on {}",
-                near_client.relayer, native_token
-            ))
-        })?;
+        let balance = self.get_relayer_balance_decimal(&native_token).await?;
 
         tracing::info!(
             "Sending {balance} of {native_token} from {} to {receiver}",
@@ -205,18 +195,13 @@ impl Client {
             )
             .await?;
 
-        let Some(usd_fee) = Decimal::from_f64(fee.usd_fee) else {
-            return Err(ClientError::ParseError(format!(
-                "USD fee {} is not a valid decimal",
-                fee.usd_fee
-            )));
-        };
-
         let Some(transferred_token_fee) = fee.transferred_token_fee else {
             return Err(ClientError::FeeError(
                 FeeError::TransferredTokenFeeIsProhibited(native_token),
             ));
         };
+
+        let usd_fee = Self::f64_to_decimal(fee.usd_fee, "transfer fee")?;
 
         if Some(usd_fee) > near_client.max_fee_usd {
             return Err(ClientError::FeeError(FeeError::HighFeeError(format!(
@@ -225,19 +210,12 @@ impl Client {
             ))));
         }
 
-        let Some(transferred_token_fee) = Decimal::from_u128(transferred_token_fee.0) else {
-            return Err(ClientError::ParseError(format!(
-                "Transferred token fee for {} is not a valid u128",
-                native_token
-            )));
-        };
-
-        let price_per_unit = usd_fee / transferred_token_fee;
-        let balance_usd = balance * price_per_unit;
+        let balance_usd =
+            Self::get_transferred_token_price_per_unit(usd_fee, transferred_token_fee.0)? * balance;
 
         if Some(balance_usd) < near_client.min_rebalance_usd {
             tracing::info!(
-                "Balance {} USD is below minimum rebalance amount {:?}, skipping",
+                "Balance {:.2} USD is below minimum rebalance amount {:?}, skipping",
                 balance_usd,
                 near_client.min_rebalance_usd
             );
@@ -312,5 +290,34 @@ impl Client {
         self.rebalancer_tx.as_ref().ok_or_else(|| {
             ClientError::ConfigError("Rebalance channel is not initialized".to_string())
         })
+    }
+
+    fn u128_to_decimal(value: u128, context: &str) -> Result<Decimal, ClientError> {
+        Decimal::from_u128(value).ok_or_else(|| {
+            ClientError::ParseError(format!("Failed to convert {context} to decimal: {value}"))
+        })
+    }
+
+    fn f64_to_decimal(value: f64, context: &str) -> Result<Decimal, ClientError> {
+        Decimal::from_f64(value).ok_or_else(|| {
+            ClientError::ParseError(format!("Failed to convert {context} to decimal: {value}"))
+        })
+    }
+
+    async fn get_relayer_balance_decimal(&self, token: &AccountId) -> Result<Decimal, ClientError> {
+        let near_client = self.near_client()?;
+        let raw_balance = near_client
+            .ft_balance_of(token, &near_client.relayer)
+            .await?;
+        Self::u128_to_decimal(raw_balance, "relayer balance")
+    }
+
+    fn get_transferred_token_price_per_unit(
+        usd_fee: Decimal,
+        transferred_token_fee: u128,
+    ) -> Result<Decimal, ClientError> {
+        let transferred_token_fee =
+            Self::u128_to_decimal(transferred_token_fee, "transferred token fee")?;
+        Ok(usd_fee / transferred_token_fee)
     }
 }
