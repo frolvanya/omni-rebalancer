@@ -33,6 +33,8 @@ solana-sdk = "2.2.2"
 solana-client = "2.2.7"
 solana-rpc-client-api = "2.2.7"
 
+reqwest = "0.12.18"
+
 omni-types = { git = "https://github.com/near-one/omni-bridge", package = "omni-types", rev = "3662269ae0bd92fafae19767d57de048fc8d8b8c" }
 near-bridge-client = { git = "https://github.com/Near-One/bridge-sdk-rs", package = "near-bridge-client", rev = "f9b46a5f7f037deeb8b1fe137a52597912c325d9" }
 bridge-connector-common = { git = "https://github.com/Near-One/bridge-sdk-rs", package = "bridge-connector-common", rev = "f9b46a5f7f037deeb8b1fe137a52597912c325d9" }

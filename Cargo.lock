@@ -5208,6 +5208,7 @@ dependencies = [
  "near-primitives",
  "near-sdk",
  "omni-types",
+ "reqwest 0.12.18",
  "serde",
  "serde_json",
  "solana-client",

@@ -12,10 +12,11 @@ use tokio::{
     task::JoinHandle,
 };
 
-use crate::config::{self, Config};
+use crate::config::Config;
 
 pub mod evm;
 pub mod near;
+pub mod omni_endpoint;
 pub mod solana;
 
 const WATCHER_INTERVAL: u64 = 60;
@@ -51,6 +52,9 @@ pub enum ClientError {
     #[error("Solana client error: {0}")]
     SolanaError(#[from] solana::ClientError),
 
+    #[error("Omni endpoint error: {0}")]
+    OmniEndpointError(#[from] omni_endpoint::ClientError),
+
     #[error("Configuration error: {0}")]
     ConfigError(String),
 
@@ -68,47 +72,21 @@ pub struct Client {
     pub base_client: Option<evm::Client>,
     pub arb_client: Option<evm::Client>,
     pub solana_client: Option<solana::Client>,
+    pub omni_endpoint_client: Option<omni_endpoint::Client>,
 
     pub rebalancer_tx: Option<Sender<OmniAddress>>,
 }
 
-fn build_evm_client(opt: Option<config::Evm>) -> Result<Option<evm::Client>, ClientError> {
-    opt.map(|cfg| evm::Client::new(cfg.rpc_url, cfg.relayer, cfg.threshold))
-        .transpose()
-        .map_err(ClientError::EvmError)
-}
-
-fn build_solana_client(opt: Option<config::Solana>) -> Result<Option<solana::Client>, ClientError> {
-    opt.map(|cfg| solana::Client::new(cfg.rpc_url, cfg.relayer, cfg.threshold))
-        .transpose()
-        .map_err(ClientError::SolanaError)
-}
-
 impl Client {
     pub async fn build(config: Config, tx: Sender<OmniAddress>) -> Result<Self, ClientError> {
-        let near_bridge_client = near_bridge_client::NearBridgeClientBuilder::default()
-            .endpoint(Some(config.near.rpc_url.to_string()))
-            .private_key(Some(std::env::var("NEAR_PRIVATE_KEY").map_err(|_| {
-                ClientError::ConfigError(
-                    "`NEAR_PRIVATE_KEY` environment variable is not set".to_string(),
-                )
-            })?))
-            .signer(Some(config.near.relayer.to_string()))
-            .omni_bridge_id(Some(config.near.omni_bridge_id.to_string()))
-            .btc_connector(None)
-            .build()
-            .map_err(|err| ClientError::ConfigError(err.to_string()))?;
-
         ClientBuilder::default()
-            .near_bridge_client(Some(near_bridge_client))
-            .near_client(Some(near::Client::new(
-                config.near.rpc_url,
-                config.near.relayer,
-            )))
-            .eth_client(build_evm_client(config.eth)?)
-            .base_client(build_evm_client(config.base)?)
-            .arb_client(build_evm_client(config.arb)?)
-            .solana_client(build_solana_client(config.solana)?)
+            .near_bridge_client(Some(config.build_near_bridge_client()?))
+            .near_client(Some(config.build_near_client()))
+            .eth_client(config.build_evm_client(ChainKind::Eth)?)
+            .base_client(config.build_evm_client(ChainKind::Base)?)
+            .arb_client(config.build_evm_client(ChainKind::Arb)?)
+            .solana_client(config.build_solana_client()?)
+            .omni_endpoint_client(config.build_omni_endpoint_client())
             .rebalancer_tx(Some(tx))
             .build()
     }
@@ -173,8 +151,9 @@ impl Client {
     }
 
     pub async fn rebalance(&self, receiver: OmniAddress) -> Result<(), ClientError> {
-        let near_client = self.near_client()?;
         let near_bridge_client = self.near_bridge_client()?;
+        let near_client = self.near_client()?;
+        let omni_endpoint_client = self.omni_endpoint_client()?;
 
         let native_token = near_bridge_client
             .get_native_token_id(receiver.get_chain())
@@ -189,6 +168,16 @@ impl Client {
             "Sending {balance} of {native_token} from {} to {receiver}",
             near_client.relayer
         );
+
+        let fee = omni_endpoint_client
+            .get_transfer_fee(
+                &OmniAddress::Near(near_client.relayer.clone()),
+                &receiver,
+                &OmniAddress::Near(native_token),
+            )
+            .await?;
+
+        tracing::info!("Transfer fee: {fee:?}");
 
         Ok(())
     }
@@ -246,6 +235,12 @@ impl Client {
         self.solana_client
             .as_ref()
             .ok_or_else(|| ClientError::ConfigError("Solana client is not initialized".to_string()))
+    }
+
+    pub fn omni_endpoint_client(&self) -> Result<&omni_endpoint::Client, ClientError> {
+        self.omni_endpoint_client.as_ref().ok_or_else(|| {
+            ClientError::ConfigError("Omni endpoint client is not initialized".to_string())
+        })
     }
 
     pub fn rebalancer_tx(&self) -> Result<&Sender<OmniAddress>, ClientError> {

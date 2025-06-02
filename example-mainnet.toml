@@ -26,3 +26,6 @@ rpc_url = "https://api.mainnet-beta.solana.com"
 relayer = "sol:DuSs7rCr7oTLHjM29QQ8NwDViaahTU58qqxaJVyAkgbn"
 # 2 SOL
 threshold = "2000000000"
+
+[omni_endpoint]
+api_url = "https://mainnet.api.bridge.nearone.org/"
