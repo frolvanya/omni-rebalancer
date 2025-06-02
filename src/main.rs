@@ -32,7 +32,7 @@ async fn main() -> Result<()> {
     .context("Failed to parse config file")?;
 
     let (tx, rx) = tokio::sync::mpsc::channel(64);
-    let client = Arc::new(utils::Client::build(config.clone(), tx)?);
+    let client = Arc::new(utils::Client::build(config.clone(), tx).await?);
 
     let mut handles = Vec::new();
 

@@ -30,7 +30,8 @@ pub struct Config {
 #[derive(Debug, Clone, Deserialize)]
 pub struct Near {
     pub rpc_url: Url,
-    pub relayer: OmniAddress,
+    pub relayer: AccountId,
+    pub omni_bridge_id: AccountId,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -39,7 +40,6 @@ pub struct Evm {
     pub rpc_url: Url,
     pub relayer: OmniAddress,
     pub threshold: U256,
-    pub near_token: AccountId,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -47,5 +47,4 @@ pub struct Solana {
     pub rpc_url: Url,
     pub relayer: OmniAddress,
     pub threshold: U256,
-    pub near_token: AccountId,
 }

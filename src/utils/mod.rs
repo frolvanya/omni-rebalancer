@@ -1,5 +1,7 @@
 use std::sync::Arc;
 
+use bridge_connector_common::result::BridgeSdkError;
+use near_bridge_client::NearBridgeClient;
 use thiserror::Error;
 
 use alloy::primitives::U256;
@@ -34,8 +36,12 @@ macro_rules! spawn_watcher {
     };
 }
 
+#[allow(clippy::enum_variant_names)]
 #[derive(Debug, Error)]
 pub enum ClientError {
+    #[error("Near Bridge Client error: {0}")]
+    NearBridgeClientError(#[from] BridgeSdkError),
+
     #[error("Near client error: {0}")]
     NearError(#[from] near::ClientError),
 
@@ -55,6 +61,8 @@ pub enum ClientError {
 #[derive(Builder, Default)]
 #[builder(pattern = "owned", build_fn(error = "ClientError"))]
 pub struct Client {
+    pub near_bridge_client: Option<NearBridgeClient>,
+
     pub near_client: Option<near::Client>,
     pub eth_client: Option<evm::Client>,
     pub base_client: Option<evm::Client>,
@@ -77,9 +85,26 @@ fn build_solana_client(opt: Option<config::Solana>) -> Result<Option<solana::Cli
 }
 
 impl Client {
-    pub fn build(config: Config, tx: Sender<OmniAddress>) -> Result<Self, ClientError> {
+    pub async fn build(config: Config, tx: Sender<OmniAddress>) -> Result<Self, ClientError> {
+        let near_bridge_client = near_bridge_client::NearBridgeClientBuilder::default()
+            .endpoint(Some(config.near.rpc_url.to_string()))
+            .private_key(Some(std::env::var("NEAR_PRIVATE_KEY").map_err(|_| {
+                ClientError::ConfigError(
+                    "`NEAR_PRIVATE_KEY` environment variable is not set".to_string(),
+                )
+            })?))
+            .signer(Some(config.near.relayer.to_string()))
+            .omni_bridge_id(Some(config.near.omni_bridge_id.to_string()))
+            .btc_connector(None)
+            .build()
+            .map_err(|err| ClientError::ConfigError(err.to_string()))?;
+
         ClientBuilder::default()
-            .near_client(Some(near::Client::new(config.near.rpc_url)))
+            .near_bridge_client(Some(near_bridge_client))
+            .near_client(Some(near::Client::new(
+                config.near.rpc_url,
+                config.near.relayer,
+            )))
             .eth_client(build_evm_client(config.eth)?)
             .base_client(build_evm_client(config.base)?)
             .arb_client(build_evm_client(config.arb)?)
@@ -147,18 +172,53 @@ impl Client {
         handles
     }
 
+    pub async fn rebalance(&self, receiver: OmniAddress) -> Result<(), ClientError> {
+        let near_client = self.near_client()?;
+        let near_bridge_client = self.near_bridge_client()?;
+
+        let native_token = near_bridge_client
+            .get_native_token_id(receiver.get_chain())
+            .await
+            .map_err(ClientError::NearBridgeClientError)?;
+
+        let balance = near_client
+            .ft_balance_of(&native_token, &near_client.relayer)
+            .await?;
+
+        tracing::info!(
+            "Sending {balance} of {native_token} from {} to {receiver}",
+            near_client.relayer
+        );
+
+        Ok(())
+    }
+
     pub async fn start_rebalancer(
-        &self,
+        self: Arc<Self>,
         mut rebalancer_rx: Receiver<OmniAddress>,
     ) -> JoinHandle<Result<(), ClientError>> {
         tracing::info!("Starting rebalancer");
 
         tokio::spawn(async move {
             while let Some(address) = rebalancer_rx.recv().await {
-                tracing::info!("Triggering rebalancing for {}", address);
+                tokio::spawn({
+                    let cloned_self = self.clone();
+
+                    async move {
+                        if let Err(err) = cloned_self.rebalance(address.clone()).await {
+                            tracing::error!("Rebalance failed for {}: {}", address, err);
+                        }
+                    }
+                });
             }
 
             Ok(())
+        })
+    }
+
+    pub fn near_bridge_client(&self) -> Result<&NearBridgeClient, ClientError> {
+        self.near_bridge_client.as_ref().ok_or_else(|| {
+            ClientError::ConfigError("Near bridge client is not initialized".to_string())
         })
     }
 

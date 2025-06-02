@@ -1,13 +1,13 @@
 [near]
 rpc_url = "https://rpc.testnet.near.org"
-relayer = "near:omni-relayer-testnet.testnet"
+relayer = "omni-relayer-testnet.testnet"
+omni_bridge_id = "omni.n-bridge.testnet"
 
 [eth]
 rpc_url = "https://sepolia.infura.io/v3/INFURA_API_KEY"
 relayer = "eth:0xae6118F695E078DA03d7c59aD84a6a810D37b707"
 # 10 ETH
 threshold = "10000000000000000000"
-near_token = "eth.sepolia.testnet"
 
 # Base native token is not deployed on testnet
 # [base]
@@ -15,7 +15,6 @@ near_token = "eth.sepolia.testnet"
 # relayer = "base:0xae6118F695E078DA03d7c59aD84a6a810D37b707"
 # # 0.2 ETH
 # threshold = "200000000000000000"
-# near_token = "base.omdep.near"
 
 # Arb native token is not deployed on testnet
 # [arb]
@@ -23,11 +22,9 @@ near_token = "eth.sepolia.testnet"
 # relayer = "arb:0xae6118F695E078DA03d7c59aD84a6a810D37b707"
 # # 0.2 ETH
 # threshold = "200000000000000000"
-# near_token = "arb.omdep.near"
 
 [solana]
 rpc_url = "https://api.devnet.solana.com"
 relayer = "sol:BXss9YNCX2p6VPf2Em54pHXkXnC2FPBeZgbB9fY1cuBR"
 # 2 SOL
 threshold = "2000000000"
-near_token = "sol.omnidep.testnet"
