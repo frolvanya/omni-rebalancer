@@ -37,6 +37,7 @@ pub struct Near {
     pub relayer: AccountId,
     pub omni_bridge_id: AccountId,
     pub max_fee_usd: Option<f64>,
+    pub min_rebalance_usd: Option<f64>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -80,6 +81,7 @@ impl Config {
             self.near.rpc_url.clone(),
             self.near.relayer.clone(),
             self.near.max_fee_usd,
+            self.near.min_rebalance_usd,
         )
     }
 

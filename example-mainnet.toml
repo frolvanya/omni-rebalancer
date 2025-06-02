@@ -3,6 +3,7 @@ rpc_url = "https://rpc.mainnet.near.org"
 relayer = "omni-relayer.bridge.near"
 omni_bridge_id = "omni.bridge.near"
 max_fee_usd = 0.50
+min_rebalance_usd = 50.00
 
 [eth]
 rpc_url = "https://mainnet.infura.io/v3/INFURA_API_KEY"

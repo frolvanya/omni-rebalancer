@@ -2,6 +2,7 @@ use std::sync::Arc;
 
 use bridge_connector_common::result::BridgeSdkError;
 use near_bridge_client::NearBridgeClient;
+use near_sdk::AccountId;
 use thiserror::Error;
 
 use alloy::primitives::U256;
@@ -39,6 +40,19 @@ macro_rules! spawn_watcher {
 
 #[allow(clippy::enum_variant_names)]
 #[derive(Debug, Error)]
+pub enum FeeError {
+    #[error("Native token fee is prohibited: {0}")]
+    NativeTokenFeeIsProhibited(AccountId),
+
+    #[error("Transferred token fee is prohibited: {0}")]
+    TransferredTokenFeeIsProhibited(AccountId),
+
+    #[error("High fee error: {0}")]
+    HighFeeError(String),
+}
+
+#[allow(clippy::enum_variant_names)]
+#[derive(Debug, Error)]
 pub enum ClientError {
     #[error("Near Bridge Client error: {0}")]
     NearBridgeClientError(#[from] BridgeSdkError),
@@ -61,8 +75,8 @@ pub enum ClientError {
     #[error("Unsupported chain: {0}")]
     UnsupportedChain(String),
 
-    #[error("High fee error: {0}")]
-    HighFeeError(String),
+    #[error("Fee error: {0}")]
+    FeeError(#[from] FeeError),
 }
 
 #[derive(Builder, Default)]
@@ -165,7 +179,7 @@ impl Client {
 
         let balance = near_client
             .ft_balance_of(&native_token, &near_client.relayer)
-            .await?;
+            .await? as f64;
 
         tracing::info!(
             "Sending {balance} of {native_token} from {} to {receiver}",
@@ -176,18 +190,40 @@ impl Client {
             .get_transfer_fee(
                 &OmniAddress::Near(near_client.relayer.clone()),
                 &receiver,
-                &OmniAddress::Near(native_token),
+                &OmniAddress::Near(native_token.clone()),
             )
             .await?;
 
+        let Some(native_token_fee) = fee.native_token_fee else {
+            return Err(ClientError::FeeError(FeeError::NativeTokenFeeIsProhibited(
+                native_token,
+            )));
+        };
+
+        let Some(transferred_token_fee) = fee.transferred_token_fee else {
+            return Err(ClientError::FeeError(
+                FeeError::TransferredTokenFeeIsProhibited(native_token),
+            ));
+        };
+
         if Some(fee.usd_fee) > near_client.max_fee_usd {
-            return Err(ClientError::HighFeeError(format!(
+            return Err(ClientError::FeeError(FeeError::HighFeeError(format!(
                 "Transfer fee {} exceeds max fee {:?}",
                 fee.usd_fee, near_client.max_fee_usd
-            )));
+            ))));
         }
 
-        tracing::info!("Transfer fee: {fee:?}");
+        let price_per_unit = fee.usd_fee / transferred_token_fee.0 as f64;
+        let balance_usd = balance as f64 * price_per_unit;
+
+        if Some(balance_usd) < near_client.min_rebalance_usd {
+            tracing::info!(
+                "Balance {} USD is below minimum rebalance amount {:?}, skipping",
+                balance_usd,
+                near_client.min_rebalance_usd
+            );
+            return Ok(());
+        }
 
         Ok(())
     }
