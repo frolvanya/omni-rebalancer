@@ -41,9 +41,6 @@ macro_rules! spawn_watcher {
 #[allow(clippy::enum_variant_names)]
 #[derive(Debug, Error)]
 pub enum FeeError {
-    #[error("Native token fee is prohibited: {0}")]
-    NativeTokenFeeIsProhibited(AccountId),
-
     #[error("Transferred token fee is prohibited: {0}")]
     TransferredTokenFeeIsProhibited(AccountId),
 
@@ -77,6 +74,9 @@ pub enum ClientError {
 
     #[error("Fee error: {0}")]
     FeeError(#[from] FeeError),
+
+    #[error("Uninitialized field: {0}")]
+    UninitializedFieldError(#[from] UninitializedFieldError),
 }
 
 #[derive(Builder, Default)]
@@ -194,12 +194,6 @@ impl Client {
             )
             .await?;
 
-        let Some(native_token_fee) = fee.native_token_fee else {
-            return Err(ClientError::FeeError(FeeError::NativeTokenFeeIsProhibited(
-                native_token,
-            )));
-        };
-
         let Some(transferred_token_fee) = fee.transferred_token_fee else {
             return Err(ClientError::FeeError(
                 FeeError::TransferredTokenFeeIsProhibited(native_token),
@@ -293,11 +287,5 @@ impl Client {
         self.rebalancer_tx.as_ref().ok_or_else(|| {
             ClientError::ConfigError("Rebalance channel is not initialized".to_string())
         })
-    }
-}
-
-impl From<UninitializedFieldError> for ClientError {
-    fn from(err: UninitializedFieldError) -> Self {
-        ClientError::ConfigError(format!("Missing field: {}", err))
     }
 }
